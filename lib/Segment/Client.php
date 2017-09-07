@@ -1,20 +1,16 @@
 <?php
 
-require(__DIR__ . '/Consumer.php');
-require(__DIR__ . '/QueueConsumer.php');
-require(__DIR__ . '/Consumer/File.php');
-require(__DIR__ . '/Consumer/ForkCurl.php');
-require(__DIR__ . '/Consumer/Socket.php');
+require_once(__DIR__ . '/Consumer.php');
+require_once(__DIR__ . '/QueueConsumer.php');
+require_once(__DIR__ . '/Consumer/File.php');
+require_once(__DIR__ . '/Consumer/ForkCurl.php');
+require_once(__DIR__ . '/Consumer/LibCurl.php');
+require_once(__DIR__ . '/Consumer/Socket.php');
+require_once(__DIR__ . '/Version.php');
 
 class Segment_Client {
 
-  /**
-   * VERSION
-   */
-
-  const VERSION = "1.1.3";
-
-  private $consumer;
+  protected $consumer;
 
   /**
    * Create a new analytics object with your app's secret
@@ -22,22 +18,26 @@ class Segment_Client {
    *
    * @param string $secret
    * @param array  $options array of consumer options [optional]
-   * @param string Consumer constructor to use, socket by default.
+   * @param string Consumer constructor to use, libcurl by default.
+   *
    */
   public function __construct($secret, $options = array()) {
 
     $consumers = array(
       "socket"     => "Segment_Consumer_Socket",
       "file"       => "Segment_Consumer_File",
-      "fork_curl"  => "Segment_Consumer_ForkCurl"
+      "fork_curl"  => "Segment_Consumer_ForkCurl",
+      "lib_curl"   => "Segment_Consumer_LibCurl"
     );
 
-    # Use our socket consumer by default
+    # Use our socket libcurl by default
     $consumer_type = isset($options["consumer"]) ? $options["consumer"] :
-                                                   "socket";
+                                                   "lib_curl";
+
     $Consumer = $consumers[$consumer_type];
 
     $this->consumer = new $Consumer($secret, $options);
+
   }
 
   public function __destruct() {
@@ -118,10 +118,13 @@ class Segment_Client {
 
   /**
    * Flush any async consumers
+   * @return boolean true if flushed successfully
    */
   public function flush() {
-    if (!method_exists($this->consumer, 'flush')) return;
-    $this->consumer->flush();
+    if (method_exists($this->consumer, 'flush')) {
+      return $this->consumer->flush();
+    }
+    return true;
   }
 
   /**
@@ -134,16 +137,22 @@ class Segment_Client {
    * Note: php's date() "u" format (for microseconds) has a bug in it
    * it always shows `.000` for microseconds since `date()` only accepts
    * ints, so we have to construct the date ourselves if microtime is passed.
-   * 
+   *
    * @param  time $timestamp - time in seconds (time())
    */
   private function formatTime($ts) {
     // time()
-    if ($ts == null) $ts = time();
-    if (is_integer($ts)) return date("c", $ts);
+    if ($ts == null || !$ts) $ts = time();
+    if (filter_var($ts, FILTER_VALIDATE_INT) !== false) return date("c", (int) $ts);
 
-    // anything else return a new date.
-    if (!is_float($ts)) return date("c");
+    // anything else try to strtotime the date.
+    if (filter_var($ts, FILTER_VALIDATE_FLOAT) === false) {
+      if (is_string($ts)) {
+        return date("c", strtotime($ts));
+      } else {
+        return date("c");
+      }
+    }
 
     // fix for floatval casting in send.php
     $parts = explode(".", (string)$ts);
@@ -153,7 +162,7 @@ class Segment_Client {
     $sec = (int)$parts[0];
     $usec = (int)$parts[1];
     $fmt = sprintf("Y-m-d\TH:i:s%sP", $usec);
-    return date($fmt, (int)$sec);  
+    return date($fmt, (int)$sec);
   }
 
   /**
@@ -167,9 +176,13 @@ class Segment_Client {
   private function message($msg, $def = ""){
     if ($def && !isset($msg[$def])) $msg[$def] = array();
     if ($def && empty($msg[$def])) $msg[$def] = (object)$msg[$def];
-    if (!isset($msg["context"])) $msg["context"] = array();
+
+    if (!isset($msg["context"])) {
+      $msg["context"] = array();
+    }
+    $msg["context"] = array_merge($this->getDefaultContext(), $msg["context"]);
+
     if (!isset($msg["timestamp"])) $msg["timestamp"] = null;
-    $msg["context"] = array_merge($msg["context"], $this->getContext());
     $msg["timestamp"] = $this->formatTime($msg["timestamp"]);
     $msg["messageId"] = self::messageId();
     return $msg;
@@ -199,11 +212,13 @@ class Segment_Client {
    * Add the segment.io context to the request
    * @return array additional context
    */
-  private function getContext () {
+  private function getDefaultContext () {
+    global $SEGMENT_VERSION;
     return array(
       "library" => array(
         "name" => "analytics-php",
-        "version" => self::VERSION
+        "version" => $SEGMENT_VERSION,
+        "consumer" => $this->consumer->getConsumer()
       )
     );
   }

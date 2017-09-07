@@ -51,7 +51,7 @@ class ConsumerSocketTest extends PHPUnit_Framework_TestCase {
   }
 
   function testScreen(){
-    $this->assertTrue($this->client->page(array(
+    $this->assertTrue($this->client->screen(array(
       "anonymousId" => "anonymousId",
       "name" => "grand theft auto",
       "category" => "socket",
@@ -132,6 +132,22 @@ class ConsumerSocketTest extends PHPUnit_Framework_TestCase {
       "properties" => array("big_property" => $big_property)
     )));
 
+    $client->__destruct();
+  }
+
+  /**
+   * @expectedException \RuntimeException
+   */
+  function testConnectionError() {
+    $client = new Segment_Client("x", array(
+      "consumer"      => "socket",
+      "host"          => "api.segment.ioooooo",
+      "error_handler" => function ($errno, $errmsg) {
+        throw new \RuntimeException($errmsg, $errno);
+      },
+    ));
+
+    $client->track(array("user_id" => "some-user", "event" => "Event"));
     $client->__destruct();
   }
 }

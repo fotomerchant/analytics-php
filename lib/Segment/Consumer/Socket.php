@@ -5,6 +5,11 @@ class Segment_Consumer_Socket extends Segment_QueueConsumer {
   protected $type = "Socket";
   private $socket_failed;
 
+  //define getter method for consumer type
+  public function getConsumer() {
+    return $this->type;
+  }
+
   /**
    * Creates a new socket consumer for dispatching async requests immediately
    * @param string $secret
@@ -56,7 +61,7 @@ class Segment_Consumer_Socket extends Segment_QueueConsumer {
                            $errstr, $timeout);
 
       # If we couldn't open the socket, handle the error.
-      if ($errno != 0) {
+      if (false === $socket) {
         $this->handleError($errno, $errstr);
         $this->socket_failed = true;
         return false;
@@ -121,6 +126,14 @@ class Segment_Consumer_Socket extends Segment_QueueConsumer {
         $this->handleError($res["status"], $res["message"]);
         $success = false;
       }
+    } else {
+      // we have to read from the socket to avoid getting into
+      // states where the socket doesn't properly re-open.
+      // as long as we keep the recv buffer empty, php will
+      // properly reconnect
+      stream_set_timeout($socket, 0, 50000);
+      fread($socket, 2048);
+      stream_set_timeout($socket, 5);
     }
 
     return $success;

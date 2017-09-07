@@ -7,7 +7,11 @@ analytics-php is a php client for [Segment](https://segment.com)
 
 ## Documentation
 
-Documentation is available at [segment.com/libraries/php](https://segment.com/libraries/php)
+Documentation is available at [segment.com/docs/sources/server/php](https://segment.com/docs/sources/server/php/)
+
+## Releasing
+
+Run `make release VERSION=<version>`. It should automatically tag and release in composer
 
 ## License
 
